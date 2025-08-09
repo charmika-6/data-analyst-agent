@@ -1,33 +1,38 @@
-from fastapi import FastAPI, File, UploadFile
-import uvicorn
-#temporary
-from app.scraper import scrape_highest_grossing_films
-#temp close
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from scraper import scrape_wikipedia
+from analyzer import analyze_data
+from plotter import plot_data
+import os
 
 app = FastAPI()
 
-@app.post("/api/")
-async def analyze(file: UploadFile = File(...)):
-    content = await file.read()
-    text = content.decode("utf-8")
+class AnalysisRequest(BaseModel):
+    topic: str
+    question: str
 
-    # Placeholder logic
-    print("Received prompt:", text)
+@app.post("/analyze")
+def analyze(request: AnalysisRequest):
+    try:
+        # Step 1: Scrape Wikipedia data
+        data = scrape_wikipedia(request.topic)
 
-    return [
-        1,
-        "Titanic",
-        0.485782,
-        "data:image/png;base64,abc123=="  # dummy image
-    ]
+        # Step 2: Analyze data
+        analysis_result = analyze_data(data, request.question)
+
+        # Step 3: Generate plot (if applicable)
+        plot_path = plot_data(data, request.topic)
+
+        return {
+            "topic": request.topic,
+            "question": request.question,
+            "analysis": analysis_result,
+            "plot_path": plot_path if plot_path else None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
-
-#temp
-@app.get("/test-scrape/")
-def test_scrape():
-    url = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"
-    df = scrape_highest_grossing_films(url)
-    return df.head(3).to_dict()
-#temp close
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
